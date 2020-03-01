@@ -1,0 +1,281 @@
+1. C 
+2. B
+3. C
+4. D
+5. D
+6. B
+7. B
+8. A,D
+9. C
+10. 
+Yes. We can do that by any of the following ways:
+1). Setting the value of server.port property as the port we want in the application.properties (or application.yml) config file of the project.
+2). If we're running the project with "java -jar" command, we can change the port by setting the command line option, such as "java -jar XXX.jar --server.port=8001"
+3). We can also change the port by setting the environment variable SERVER_PORT to the expected port number before starting the project, and then run the project.
+4). Finally, we can create an instance of the Customizer bean and add it to the IOC container to set the port. But the class is different in Spring Boot 1.x and 2.x. 
+    Here are the details: 
+    In Spring Boot 1.x, the class we should use is a custom implementation of EmbeddedServletContainerCustomizer interface. 
+    When implementing its customize() method, we can set the port there, like below:
+
+    @Bean
+    public EmbeddedServletContainerCustomizer embeddedServletContainerCustomizer(){
+        return new EmbeddedServletContainerCustomizer() {
+            @Override
+            public void customize(ConfigurableEmbeddedServletContainer container) {
+                container.setPort(8083);
+            }
+        };
+    }
+
+    In Spring Boot 2.x, the class we should use is a custom implementation of WebServerFactoryCustomizer interface. 
+    When implementing its customize() method, we can set the port there, like below:
+
+    @Bean
+    public WebServerFactoryCustomizer embeddedServletContainerCustomizer(){
+        return new WebServerFactoryCustomizer<ConfigurableWebServerFactory>() {
+
+            @Override
+            public void customize(ConfigurableWebServerFactory factory) {
+                factory.setPort(8083);
+            }
+
+        };
+    }
+
+
+11. 
+The code is as follows. Please note that I've also enclosed another copy of it in the FxRateCalculator.java alone with this file, so that you can read it much easier.
+Also, Please note that FxRateCalculatorTest.java includes all the unit tests. I used JUnit 4.12 to write the tests.
+
+import java.math.BigDecimal;
+import java.util.*;
+
+public class FxRateCalculator {
+
+    private static final Set<String> CURRENCY_CODES = new HashSet<>();
+
+    CurrencyGraph currencyGraph = new CurrencyGraph();
+
+    public FxRateCalculator() {
+        initCurrencyData();
+    }
+
+    /**
+     * Initialize the currency rates data.
+     */
+    private void initCurrencyData() {
+        CURRENCY_CODES.add("EUR");
+        CURRENCY_CODES.add("USD");
+        CURRENCY_CODES.add("GBP");
+        CURRENCY_CODES.add("AUD");
+        CURRENCY_CODES.add("JPY");
+        CURRENCY_CODES.add("INR");
+
+        for (String currencyCode : CURRENCY_CODES) {
+            currencyGraph.addCurrency(currencyCode);
+        }
+
+        currencyGraph.addRate("EUR", "USD", 1.2);
+        currencyGraph.addRate("USD", "EUR", 1.0 / 1.2);
+
+        currencyGraph.addRate("USD", "GBP", 0.75);
+        currencyGraph.addRate("GBP", "USD", 1.0 / 0.75);
+
+        currencyGraph.addRate("GBP", "AUD", 1.7);
+        currencyGraph.addRate("AUD", "GBP", 1.0 / 1.7);
+
+        currencyGraph.addRate("AUD", "JPY", 90.0);
+        currencyGraph.addRate("JPY", "AUD", 1.0 / 90.0);
+
+        currencyGraph.addRate("GBP", "JPY", 150);
+        currencyGraph.addRate("JPY", "GBP", 1.0 / 150);
+
+        currencyGraph.addRate("JPY", "INR", 0.6);
+        currencyGraph.addRate("INR", "JPY", 1.0 / 0.6);
+    }
+
+    /**
+     * Validate the input currency pair and invoke calculation.
+     * @param currencyPair
+     * @return
+     */
+    public double calculateRate(String currencyPair) {
+        // Validate input
+        if (currencyPair == null) {
+            throw new RuntimeException("Invalid input: Invalid currency pair format. Should be in the format of 'FROM_CURRENCY/TO_CURRENCY', e.g. 'EUR/USD'");
+        }
+
+        final String[] inputCurrencyCodes = currencyPair.split("/");
+
+        if (inputCurrencyCodes.length != 2) {
+            throw new RuntimeException("Invalid input: Invalid currency pair format. Should be in the format of 'FROM_CURRENCY/TO_CURRENCY', e.g. 'EUR/USD'");
+        }
+
+        String srcCurrencyCode = inputCurrencyCodes[0].toUpperCase();
+        String destCurrencyCode = inputCurrencyCodes[1].toUpperCase();
+
+        if (!CURRENCY_CODES.contains(srcCurrencyCode)) {
+            throw new RuntimeException(String.format("Invalid input: '%s' is not a supported currency.", srcCurrencyCode));
+        }
+
+        if (!CURRENCY_CODES.contains(destCurrencyCode)) {
+            throw new RuntimeException(String.format("Invalid input: '%s' is not a supported currency.", destCurrencyCode));
+
+        }
+
+        // Invoke the calculation
+        return doCalculate(srcCurrencyCode, destCurrencyCode);
+    }
+
+
+    /**
+     * Do the actual calculation
+     * @param srcCurrencyCode Source currency code.
+     * @param destCurrencyCode Destination currency code.
+     * @return
+     */
+    private double doCalculate(String srcCurrencyCode, String destCurrencyCode) {
+
+        final List<Double> rates = currencyGraph.searchRates(srcCurrencyCode, destCurrencyCode);
+
+        if (rates == null) {
+            throw new RuntimeException("Rate not found.");
+        }
+
+        double resultRate = 1.0;
+
+        for (Double rate : rates) {
+            resultRate *= rate;
+        }
+
+        return new BigDecimal(resultRate).setScale(2, BigDecimal.ROUND_HALF_UP).doubleValue();
+    }
+
+
+    public static void main(String[] args) {
+        FxRateCalculator calculator = new FxRateCalculator();
+        try {
+            System.out.println("Please input a currency pair (e.g. EUR/USD) and press ENTER: ");
+            Scanner sc = new Scanner(System.in);
+            String currencyPair = sc.nextLine();
+            double rate = calculator.calculateRate(currencyPair);
+            System.out.println(String.format("The rate of %s is: %s", currencyPair, rate));
+        } catch (Exception e) {
+            System.out.println(e.getLocalizedMessage());
+        }
+    }
+}
+
+
+/**
+ * A simple graph used to find the exchange path.
+ */
+class CurrencyGraph {
+
+    private Set<String> currencyVertices = new HashSet<>();
+    private Map<String, Map<String, Double>> rateEdges = new HashMap<>();
+
+
+    /**
+     * Add currency code as vertex
+     * @param currencyCode
+     */
+    public void addCurrency(String currencyCode) {
+        currencyVertices.add(currencyCode);
+    }
+
+    /**
+     * Add rates between currencies as edge
+     * @param srcCurrency
+     * @param destCurrency
+     * @param rate
+     */
+    public void addRate(String srcCurrency, String destCurrency, double rate) {
+        if (!currencyVertices.contains(srcCurrency)) {
+            return;
+        }
+        if (!currencyVertices.contains(destCurrency)) {
+            return;
+        }
+
+        Map<String, Double> rateMap = rateEdges.get(srcCurrency);
+        if (rateMap == null) {
+            rateMap = new HashMap<>();
+            rateEdges.put(srcCurrency, rateMap);
+        }
+        rateMap.put(destCurrency, rate);
+    }
+
+
+    /**
+     * Helper class for the search
+     */
+    private static class SearchNode {
+        private String currencyCode;
+        private double rate;
+        private SearchNode parent;
+
+        public SearchNode(String currencyCode, double rate, SearchNode parent) {
+            this.currencyCode = currencyCode;
+            this.rate = rate;
+            this.parent = parent;
+        }
+    }
+
+
+    /**
+     * Searching the rates on the exchange path with BFS
+     * @param srcCurrency
+     * @param destCurrency
+     * @return
+     */
+    public List<Double> searchRates(String srcCurrency, String destCurrency) {
+
+        Queue<SearchNode> queue = new LinkedList<>();
+        Set<String> visited = new HashSet<>();
+
+        queue.offer(new SearchNode(srcCurrency, 1.0, null));
+        visited.add(srcCurrency);
+
+        SearchNode resultNode = null;
+
+        while(!queue.isEmpty()) {
+            SearchNode currentNode = queue.poll();
+            String currencyCode = currentNode.currencyCode;
+
+            if (currencyCode.equals(destCurrency)) {
+                resultNode = currentNode;
+                break;
+            }
+
+            Map<String, Double> outEdges = rateEdges.get(currencyCode);
+
+            for (Map.Entry<String, Double> edge : outEdges.entrySet()) {
+
+                String toVertex = edge.getKey();
+                if (visited.contains(toVertex)) {
+                    continue;
+                }
+
+                Double rate = edge.getValue();
+
+                queue.offer(new SearchNode(toVertex, rate, currentNode));
+                visited.add(toVertex);
+            }
+        }
+
+        List<Double> resultRates = null;
+
+        if (resultNode != null) {
+            resultRates = new ArrayList<>();
+            while (resultNode != null) {
+                resultRates.add(resultNode.rate);
+                resultNode = resultNode.parent;
+            }
+        }
+
+        return resultRates;
+    }
+
+}
+
